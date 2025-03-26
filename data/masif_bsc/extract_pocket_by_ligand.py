@@ -36,15 +36,12 @@ def find_nearby_residues(protein_pdb_path, ligand_pdb_path, cutoff=5.0, output=N
             res_id, _ = id
             nearby_residues_id.add(res_id)
     nearby_residues_id_sorted = sorted(nearby_residues_id)
-    print(nearby_residues_id_sorted)
 
     if output:
         with open(output, 'w') as f:
             nearby_residues_line = []
             for id, atom_info in protein_atoms.items():
                 if id[0] in nearby_residues_id_sorted:
-                    print(f"Residue {id[0]} is within {cutoff} Å of the ligand")
-                    print(atom_info['line'])
                     nearby_residues_line.append(atom_info['line'])
             f.writelines(nearby_residues_line)
 
