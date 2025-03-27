@@ -16,7 +16,8 @@ else:
 
 pdb2pqr_bin=""
 if 'PDB2PQR_BIN' in os.environ:
-   pdb2pqr_bin = os.environ['PDB2PQR_BIN']
+   # pdb2pqr_bin = os.environ['PDB2PQR_BIN']
+   pdb2pqr_bin = "/app/pdb2pqr/pdb2pqr.py"
 else:
   print("ERROR: PDB2PQR_BIN not set. Variable should point to PDB2PQR_BIN program.")
   sys.exit(1)
