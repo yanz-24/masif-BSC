@@ -1,5 +1,4 @@
 #!/bin/bash
-echo $1, $2, $3
 masif_root=/home/yanyuan.zhang/project/masif-toughm1/masif-BSC
 masif_source=$masif_root/source
 wd=$masif_root/data/masif_bsc
