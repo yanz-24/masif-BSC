@@ -1,0 +1,19 @@
+universe                = docker
+docker_image            = yanz24/masif_new:v1
+executable              = cache_nn.sh
+arguments               = -f $(inputfile) $(id_chain)
+log                     = logs_pocket_6A/job_$(Process)_$(id_chain).log
+output                  = logs_pocket_6A/job_$(Process)_$(id_chain).out
+error                   = logs_pocket_6A/job_$(Process)_$(id_chain).err
+when_to_transfer_output = ON_EXIT
+should_transfer_files   = YES
+transfer_output_files = ""
+request_GPUs            = 0 
+request_CPUs            = 10
+request_memory          = 16G
+requirements            = UidDomain == "cs.uni-saarland.de" 
+getenv                  = HOME
++WantGPUHomeMounted     = true
++WantScratchMounted     = true
+
+queue inputfile, id_chain from jobs.csv
