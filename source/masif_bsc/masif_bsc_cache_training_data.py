@@ -1,12 +1,8 @@
 # Header variables and parameters.
 import sys
-import pymesh
 import os
 import numpy as np
-from IPython.core.debugger import set_trace
-import importlib
-
-from scipy.spatial import cKDTree
+import pandas as pd
 
 from default_config.masif_opts import masif_opts
 
