@@ -78,35 +78,38 @@ def load_sample(p1_id, p2_id, label, split):
 
 
 # deal with trainig and testing set
-for _, row in train_df.iterrows():
+for _, row in train_df[0:3].iterrows():
     load_sample(row['p1'], row['p2'], row['label'], 'train')
 
-for _, row in test_df.iterrows():
+for _, row in test_df[0:3].iterrows():
     load_sample(row['p1'], row['p2'], row['label'], 'test')
-
 
 # save in cache
 if not os.path.exists(params['cache_dir']):
     os.makedirs(params['cache_dir'])
 
 def save_npy(name, array):
-    np.save(os.path.join(params['cache_dir'], name + '.npy'), array)
+    try:
+        # array = np.concatenate(array, axis=0)
+        np.save(os.path.join(params['cache_dir'], name + '.npy'), array)
+    except Exception as e:
+        print(f"Error saving {name}: {e}")
 
-save_npy('binder_rho_wrt_center', np.array(binder_rho_wrt_center))
-save_npy('binder_theta_wrt_center', np.array(binder_theta_wrt_center))
-save_npy('binder_input_feat', np.array(binder_input_feat))
-save_npy('binder_mask', np.array(binder_mask))
+save_npy('binder_rho_wrt_center', np.concatenate(binder_rho_wrt_center, axis=0))
+save_npy('binder_theta_wrt_center', np.concatenate(binder_theta_wrt_center, axis=0))
+save_npy('binder_input_feat', np.concatenate(binder_input_feat, axis=0))
+save_npy('binder_mask', np.concatenate(binder_mask, axis=0))
 
-save_npy('pos_rho_wrt_center', np.array(pos_rho_wrt_center))
-save_npy('pos_theta_wrt_center', np.array(pos_theta_wrt_center))
-save_npy('pos_input_feat', np.array(pos_input_feat))
-save_npy('pos_mask', np.array(pos_mask))
+save_npy('pos_rho_wrt_center', np.concatenate(pos_rho_wrt_center, axis=0))
+save_npy('pos_theta_wrt_center', np.concatenate(pos_theta_wrt_center, axis=0))
+save_npy('pos_input_feat', np.concatenate(pos_input_feat, axis=0))
+save_npy('pos_mask', np.concatenate(pos_mask, axis=0))
 save_npy('pos_names', pos_names)
 
-save_npy('neg_rho_wrt_center', np.array(neg_rho_wrt_center))
-save_npy('neg_theta_wrt_center', np.array(neg_theta_wrt_center))
-save_npy('neg_input_feat', np.array(neg_input_feat))
-save_npy('neg_mask', np.array(neg_mask))
+save_npy('neg_rho_wrt_center', np.concatenate(neg_rho_wrt_center, axis=0))
+save_npy('neg_theta_wrt_center', np.concatenate(neg_theta_wrt_center, axis=0))
+save_npy('neg_input_feat', np.concatenate(neg_input_feat, axis=0))
+save_npy('neg_mask', np.concatenate(neg_mask, axis=0))
 save_npy('neg_names', neg_names)
 
 save_npy('pos_training_idx', training_idx)
