@@ -1,141 +1,131 @@
-# Header variables and parameters.
-import sys
+# masif_ppi_search_cache_triplet_data.py
 import os
-import glob
 import numpy as np
-import pandas as pd
 
 from default_config.masif_opts import masif_opts
 
 """
-masif_bsc_cache_training_data.py: TODO
+This script caches training data for MaSIF-search using triplet format lists:
+Each line: anchor positive negative
+Each protein is stored in a subfolder named after its ID, with p1_*.npy feature files.
 """
 
-# get parameters
+# Load parameters
 params = masif_opts['ppi_search']
 parent_in_dir = params['masif_precomputation_dir']
-cache_dir = params['cache_dir']
-val_range = 1 - params['range_val_samples']
 
-# output directory
-os.makedirs(cache_dir, exist_ok=True) # create cache directory if it doesn't exist
-tmp_dir = os.path.join(cache_dir, 'tmp_chunks') # create tmp directory for output
-os.makedirs(tmp_dir, exist_ok=True)
+with open(params['training_list']) as f:
+    train_lines = f.readlines()
 
-# read training and testing list
-train_df = pd.read_csv(params['training_list'])  # should contains：p1, p2, label (0/1)
-test_df = pd.read_csv(params['testing_list'])
+with open(params['testing_list']) as f:
+    test_lines = f.readlines()
 
-# Split training and validation
 np.random.seed(0)
-train_df_shuffled = train_df.sample(frac=1).reset_index(drop=True)
-val_cutoff = int(val_range * len(train_df_shuffled))
+training_idx, test_idx = [], []
 
-val_rows = train_df_shuffled.iloc[:val_cutoff]
-train_rows = train_df_shuffled.iloc[val_cutoff:]
+def load_features(protein_id, base_dir):
+    folder = os.path.join(base_dir, protein_id)
+    rho = np.load(os.path.join(folder, 'p1_rho_wrt_center.npy'))
+    theta = np.load(os.path.join(folder, 'p1_theta_wrt_center.npy'))
+    feat = np.load(os.path.join(folder, 'p1_input_feat.npy'))
+    mask = np.load(os.path.join(folder, 'p1_mask.npy'))
+    return rho, theta, feat, mask
 
-# Index tracking
-training_idx, val_idx, test_idx = [], [], []
-pos_names, neg_names = [], []
+def process_triplets(triplet_list, idx_offset):
+    binder_rho, binder_theta, binder_feat, binder_mask = [], [], [], []
+    pos_rho, pos_theta, pos_feat, pos_mask = [], [], [], []
+    neg_rho, neg_theta, neg_feat, neg_mask = [], [], [], []
+    idx_list = []
+
+    for line in triplet_list:
+        anchor, positive, negative = line.strip().split()
+
+        try:
+            a_rho, a_theta, a_feat, a_mask = load_features(anchor, parent_in_dir)
+            p_rho, p_theta, p_feat, p_mask = load_features(positive, parent_in_dir)
+            n_rho, n_theta, n_feat, n_mask = load_features(negative, parent_in_dir)
+        except Exception as e:
+            print(f"Skipping triplet due to error: {anchor}, {positive}, {negative} -> {e}")
+            continue
+
+        binder_rho.append(a_rho)
+        binder_theta.append(a_theta)
+        binder_feat.append(a_feat)
+        binder_mask.append(a_mask)
+
+        pos_rho.append(p_rho)
+        pos_theta.append(p_theta)
+        pos_feat.append(p_feat)
+        pos_mask.append(p_mask)
+
+        neg_rho.append(n_rho)
+        neg_theta.append(n_theta)
+        neg_feat.append(n_feat)
+        neg_mask.append(n_mask)
+
+        idx_list.append(idx_offset)
+        idx_offset += 1
+
+    return (
+        binder_rho, binder_theta, binder_feat, binder_mask,
+        pos_rho, pos_theta, pos_feat, pos_mask,
+        neg_rho, neg_theta, neg_feat, neg_mask,
+        idx_list, idx_offset
+    )
+
 
 idx_count = 0
+(tr_b_rho, tr_b_theta, tr_b_feat, tr_b_mask,
+ tr_p_rho, tr_p_theta, tr_p_feat, tr_p_mask,
+ tr_n_rho, tr_n_theta, tr_n_feat, tr_n_mask,
+ tr_idx, idx_count) = process_triplets(train_lines[0:2], idx_count)
 
-def save_chunk(name, array):
-    filename = os.path.join(tmp_dir, f"{name}_{idx_count}.npy")
-    np.save(filename, array)
+(ts_b_rho, ts_b_theta, ts_b_feat, ts_b_mask,
+ ts_p_rho, ts_p_theta, ts_p_feat, ts_p_mask,
+ ts_n_rho, ts_n_theta, ts_n_feat, ts_n_mask,
+ ts_idx, idx_count) = process_triplets(test_lines[0:2], idx_count)
 
-def load_sample(p1_id, p2_id, label, split):
-    global idx_count
+# Combine all
+binder_rho_wrt_center = np.concatenate(tr_b_rho + ts_b_rho, axis=0)
+binder_theta_wrt_center = np.concatenate(tr_b_theta + ts_b_theta, axis=0)
+binder_input_feat = np.concatenate(tr_b_feat + ts_b_feat, axis=0)
+binder_mask = np.concatenate(tr_b_mask + ts_b_mask, axis=0)
 
-    try:
-        in_dir1 = os.path.join(parent_in_dir, p1_id)
-        in_dir2 = os.path.join(parent_in_dir, p2_id)
+pos_rho_wrt_center = np.concatenate(tr_p_rho + ts_p_rho, axis=0)
+pos_theta_wrt_center = np.concatenate(tr_p_theta + ts_p_theta, axis=0)
+pos_input_feat = np.concatenate(tr_p_feat + ts_p_feat, axis=0)
+pos_mask = np.concatenate(tr_p_mask + ts_p_mask, axis=0)
 
-        # p1 is the binder in ppi_search, p2 is the target
-        rho1 = np.load(os.path.join(in_dir1, 'p1_rho_wrt_center.npy'))
-        theta1 = np.load(os.path.join(in_dir1, 'p1_theta_wrt_center.npy'))
-        input_feat1 = np.load(os.path.join(in_dir1, 'p1_input_feat.npy'))
-        mask1 = np.load(os.path.join(in_dir1, 'p1_mask.npy'))
+neg_rho_wrt_center = np.concatenate(tr_n_rho + ts_n_rho, axis=0)
+neg_theta_wrt_center = np.concatenate(tr_n_theta + ts_n_theta, axis=0)
+neg_input_feat = np.concatenate(tr_n_feat + ts_n_feat, axis=0)
+neg_mask = np.concatenate(tr_n_mask + ts_n_mask, axis=0)
 
-        rho2 = np.load(os.path.join(in_dir2, 'p1_rho_wrt_center.npy'))
-        theta2 = np.load(os.path.join(in_dir2, 'p1_theta_wrt_center.npy'))
-        input_feat2 = np.load(os.path.join(in_dir2, 'p1_input_feat.npy'))
-        mask2 = np.load(os.path.join(in_dir2, 'p1_mask.npy'))
+training_idx = np.array(tr_idx)
+test_idx = np.array(ts_idx)
 
-        # add binder
-        save_chunk('binder_rho_wrt_center', rho1)
-        save_chunk('binder_theta_wrt_center', theta1)
-        save_chunk('binder_input_feat', input_feat1)
-        save_chunk('binder_mask', mask1)
+# Save all
+if not os.path.exists(params['cache_dir']):
+    os.makedirs(params['cache_dir'])
 
-        pair_name = f"{p1_id}_{p2_id}"
+np.save(os.path.join(params['cache_dir'], 'binder_rho_wrt_center.npy'), binder_rho_wrt_center)
+np.save(os.path.join(params['cache_dir'], 'binder_theta_wrt_center.npy'), binder_theta_wrt_center)
+np.save(os.path.join(params['cache_dir'], 'binder_input_feat.npy'), binder_input_feat)
+np.save(os.path.join(params['cache_dir'], 'binder_mask.npy'), binder_mask)
 
-        if label == 1:
-            save_chunk('pos_rho_wrt_center', rho2)
-            save_chunk('pos_theta_wrt_center', theta2)
-            save_chunk('pos_input_feat', input_feat2)
-            save_chunk('pos_mask', mask2)
-            pos_names.append(pair_name)
-        elif label == 0:
-            save_chunk('neg_rho_wrt_center', rho2)
-            save_chunk('neg_theta_wrt_center', theta2)
-            save_chunk('neg_input_feat', input_feat2)
-            save_chunk('neg_mask', mask2)
-            neg_names.append(pair_name)
+np.save(os.path.join(params['cache_dir'], 'pos_rho_wrt_center.npy'), pos_rho_wrt_center)
+np.save(os.path.join(params['cache_dir'], 'pos_theta_wrt_center.npy'), pos_theta_wrt_center)
+np.save(os.path.join(params['cache_dir'], 'pos_input_feat.npy'), pos_input_feat)
+np.save(os.path.join(params['cache_dir'], 'pos_mask.npy'), pos_mask)
+np.save(os.path.join(params['cache_dir'], 'pos_training_idx.npy'), training_idx)
+np.save(os.path.join(params['cache_dir'], 'pos_test_idx.npy'), test_idx)
+# TODO: add validation set
 
-        # 保存 index
-        if split == 'train':
-            training_idx.append(idx_count)
-        elif split == 'test':
-            test_idx.append(idx_count)
-        elif split == 'val':
-            val_idx.append(idx_count)
+np.save(os.path.join(params['cache_dir'], 'neg_rho_wrt_center.npy'), neg_rho_wrt_center)
+np.save(os.path.join(params['cache_dir'], 'neg_theta_wrt_center.npy'), neg_theta_wrt_center)
+np.save(os.path.join(params['cache_dir'], 'neg_input_feat.npy'), neg_input_feat)
+np.save(os.path.join(params['cache_dir'], 'neg_mask.npy'), neg_mask)
+np.save(os.path.join(params['cache_dir'], 'neg_training_idx.npy'), training_idx)
+np.save(os.path.join(params['cache_dir'], 'neg_test_idx.npy'), test_idx)
 
-        idx_count += 1
-
-    except Exception as e:
-        print(f"Error loading {p1_id}, {p2_id}: {e}")
-
-
-# deal with trainig, validation and testing set
-for _, row in train_rows[0:2].iterrows():
-    load_sample(row['p1'], row['p2'], row['label'], 'train')
-
-for _, row in val_rows[0:2].iterrows():
-    load_sample(row['p1'], row['p2'], row['label'], 'val')
-
-for _, row in test_df[0:2].iterrows():
-    load_sample(row['p1'], row['p2'], row['label'], 'test')
-
-
-def concatenate_chunks(name):
-    files = sorted(glob.glob(os.path.join(tmp_dir, f"{name}_*.npy")))
-    arrays = [np.load(f) for f in files]
-    if arrays and isinstance(arrays[0], np.ndarray):
-        out = np.concatenate(arrays, axis=0)
-    else:
-        out = arrays
-    np.save(os.path.join(cache_dir, f"{name}.npy"), out)
-
-
-# Final saving
-for name in [
-    'binder_rho_wrt_center', 'binder_theta_wrt_center', 'binder_input_feat', 'binder_mask',
-    'pos_rho_wrt_center', 'pos_theta_wrt_center', 'pos_input_feat', 'pos_mask',
-    'neg_rho_wrt_center', 'neg_theta_wrt_center', 'neg_input_feat', 'neg_mask'
-]:
-    concatenate_chunks(name)
-
-# Save metadata
-np.save(os.path.join(cache_dir, 'pos_names.npy'), np.array(pos_names))
-np.save(os.path.join(cache_dir, 'neg_names.npy'), np.array(neg_names))
-
-np.save(os.path.join(cache_dir, 'pos_training_idx.npy'), np.array(training_idx))
-np.save(os.path.join(cache_dir, 'pos_test_idx.npy'), np.array(test_idx))
-np.save(os.path.join(cache_dir, 'pos_val_idx.npy'), np.array(val_idx))
-
-np.save(os.path.join(cache_dir, 'neg_training_idx.npy'), np.array(training_idx))
-np.save(os.path.join(cache_dir, 'neg_test_idx.npy'), np.array(test_idx))
-np.save(os.path.join(cache_dir, 'neg_val_idx.npy'), np.array(val_idx))
-
-print(f"Number of positives: {len(pos_names)} | negatives: {len(neg_names)}")
+print("Triplet data cached successfully.")
