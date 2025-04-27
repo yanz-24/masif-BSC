@@ -52,86 +52,73 @@ training_triplets = read_triplet_list(params['training_triplets'])
 validation_triplets = read_triplet_list(params['validation_triplets'])
 testing_triplets = read_triplet_list(params['testing_triplets'])
 
-# 标记来源
-all_triplets = []
-all_sources = []
-for triplet in training_triplets:
-    all_triplets.append(triplet)
-    all_sources.append('train')
-for triplet in validation_triplets:
-    all_triplets.append(triplet)
-    all_sources.append('val')
-for triplet in testing_triplets:
-    all_triplets.append(triplet)
-    all_sources.append('test')
-
 print(f"Loaded {len(training_triplets)} training, {len(validation_triplets)} validation, {len(testing_triplets)} testing triplets.")
 
 idx_count = 0
 
-# Helper函数，读取单个点的feature
-def load_single_feature(in_dir, pid, index):
-    rho = np.load(os.path.join(in_dir, f"{pid}_rho_wrt_center.npy"))[int(index)]
-    theta = np.load(os.path.join(in_dir, f"{pid}_theta_wrt_center.npy"))[int(index)]
-    feat = np.load(os.path.join(in_dir, f"{pid}_input_feat.npy"))[int(index)]
-    mask = np.load(os.path.join(in_dir, f"{pid}_mask.npy"))[int(index)]
+# Helper function to read the feature of a single point
+def load_single_feature(in_dir, pid):
+    rho = np.load(os.path.join(in_dir, f"{pid}_rho_wrt_center.npy"))
+    theta = np.load(os.path.join(in_dir, f"{pid}_theta_wrt_center.npy"))
+    feat = np.load(os.path.join(in_dir, f"{pid}_input_feat.npy"))
+    mask = np.load(os.path.join(in_dir, f"{pid}_mask.npy"))
     return rho, theta, feat, mask
 
 print("Processing triplets...")
-for i, (anchor_name, positive_name, negative_name) in enumerate(all_triplets):
-    try:
-        # anchor
-        fields = anchor_name.split('_') #TODO: 这里的分割方式需要调整
-        ppi_id = fields[0]
-        pid = fields[1]
-        idx = fields[2]
-        in_dir = os.path.join(parent_in_dir, ppi_id)
-        rho, theta, feat, mask = load_single_feature(in_dir, pid, idx)
-        anchor_rho_wrt_center.append(rho)
-        anchor_theta_wrt_center.append(theta)
-        anchor_input_feat.append(feat)
-        anchor_mask.append(mask)
-        anchor_names.append(anchor_name)
+def load_one_set_of_triplets(triplets, source):
+    global idx_count
+    for i, (anchor_name, positive_name, negative_name) in enumerate(triplets):
+        # 处理文件名
+        anchor_name = f'{anchor_name[:4]}_{anchor_name[4:]}'
+        positive_name = f'{positive_name[:4]}_{positive_name[4:]}'
+        negative_name = f'{negative_name[:4]}_{negative_name[4:]}'
 
-        # positive
-        fields = positive_name.split('_')
-        ppi_id = fields[0]
-        pid = fields[1]
-        idx = fields[2]
-        in_dir = os.path.join(parent_in_dir, ppi_id)
-        rho, theta, feat, mask = load_single_feature(in_dir, pid, idx)
-        pos_rho_wrt_center.append(rho)
-        pos_theta_wrt_center.append(theta)
-        pos_input_feat.append(feat)
-        pos_mask.append(mask)
-        pos_names.append(positive_name)
+        pid = 'p1'
 
-        # negative
-        fields = negative_name.split('_')
-        ppi_id = fields[0]
-        pid = fields[1]
-        idx = fields[2]
-        in_dir = os.path.join(parent_in_dir, ppi_id)
-        rho, theta, feat, mask = load_single_feature(in_dir, pid, idx)
-        neg_rho_wrt_center.append(rho)
-        neg_theta_wrt_center.append(theta)
-        neg_input_feat.append(feat)
-        neg_mask.append(mask)
-        neg_names.append(negative_name)
+        try:
+            # anchor
+            in_dir = os.path.join(parent_in_dir, anchor_name)
+            rho, theta, feat, mask = load_single_feature(in_dir, pid)
+            anchor_rho_wrt_center.append(rho)
+            anchor_theta_wrt_center.append(theta)
+            anchor_input_feat.append(feat)
+            anchor_mask.append(mask)
+            anchor_names.append(anchor_name)
 
-        # 保存 idx
-        if all_sources[i] == 'train':
-            train_idx.append(idx_count)
-        elif all_sources[i] == 'val':
-            val_idx.append(idx_count)
-        else:
-            test_idx.append(idx_count)
+            # positive
+            in_dir = os.path.join(parent_in_dir, positive_name)
+            rho, theta, feat, mask = load_single_feature(in_dir, pid)
+            pos_rho_wrt_center.append(rho)
+            pos_theta_wrt_center.append(theta)
+            pos_input_feat.append(feat)
+            pos_mask.append(mask)
+            pos_names.append(positive_name)
 
-        idx_count += 1
-    except Exception as e:
-        print(f"Error processing triplet {anchor_name} {positive_name} {negative_name}: {str(e)}")
-        set_trace()
+            # negative
+            in_dir = os.path.join(parent_in_dir, negative_name)
+            rho, theta, feat, mask = load_single_feature(in_dir, pid)
+            neg_rho_wrt_center.append(rho)
+            neg_theta_wrt_center.append(theta)
+            neg_input_feat.append(feat)
+            neg_mask.append(mask)
+            neg_names.append(negative_name)
 
+            # 保存 idx
+            if source == 'train':
+                train_idx.append(idx_count)
+            elif source == 'val':
+                val_idx.append(idx_count)
+            elif source == 'test':
+                test_idx.append(idx_count)
+
+            idx_count += 1
+        except Exception as e:
+            print(f"Error processing triplet {anchor_name} {positive_name} {negative_name}: {str(e)}")
+            set_trace()
+
+load_one_set_of_triplets(training_triplets, 'train')
+load_one_set_of_triplets(validation_triplets, 'val')
+load_one_set_of_triplets(testing_triplets, 'test')
 print("Finished processing all triplets.")
 
 # 保存 npy 文件
@@ -141,31 +128,34 @@ if not os.path.exists(params['cache_dir']):
 print("Saving to cache...")
 
 # Convert to numpy arrays
-anchor_rho_wrt_center = np.array(anchor_rho_wrt_center)
-anchor_theta_wrt_center = np.array(anchor_theta_wrt_center)
-anchor_input_feat = np.array(anchor_input_feat)
-anchor_mask = np.array(anchor_mask)
+anchor_rho_wrt_center = np.concatenate(anchor_rho_wrt_center, axis=0)
+anchor_theta_wrt_center = np.concatenate(anchor_theta_wrt_center, axis=0)
+anchor_input_feat = np.concatenate(anchor_input_feat, axis=0)
+anchor_mask = np.concatenate(anchor_mask, axis=0)
 
-pos_rho_wrt_center = np.array(pos_rho_wrt_center)
-pos_theta_wrt_center = np.array(pos_theta_wrt_center)
-pos_input_feat = np.array(pos_input_feat)
-pos_mask = np.array(pos_mask)
+pos_rho_wrt_center = np.concatenate(pos_rho_wrt_center, axis=0)
+pos_theta_wrt_center = np.concatenate(pos_theta_wrt_center, axis=0)
+pos_input_feat = np.concatenate(pos_input_feat, axis=0)
+pos_mask = np.concatenate(pos_mask, axis=0)
 
-neg_rho_wrt_center = np.array(neg_rho_wrt_center)
-neg_theta_wrt_center = np.array(neg_theta_wrt_center)
-neg_input_feat = np.array(neg_input_feat)
-neg_mask = np.array(neg_mask)
+neg_rho_wrt_center = np.concatenate(neg_rho_wrt_center, axis=0)
+neg_theta_wrt_center = np.concatenate(neg_theta_wrt_center, axis=0)
+neg_input_feat = np.concatenate(neg_input_feat, axis=0)
+neg_mask = np.concatenate(neg_mask, axis=0)
 
 train_idx = np.array(train_idx)
 val_idx = np.array(val_idx)
 test_idx = np.array(test_idx)
 
-# Save anchor
-np.save(os.path.join(params['cache_dir'], 'anchor_rho_wrt_center.npy'), anchor_rho_wrt_center)
-np.save(os.path.join(params['cache_dir'], 'anchor_theta_wrt_center.npy'), anchor_theta_wrt_center)
-np.save(os.path.join(params['cache_dir'], 'anchor_input_feat.npy'), anchor_input_feat)
-np.save(os.path.join(params['cache_dir'], 'anchor_mask.npy'), anchor_mask)
-np.save(os.path.join(params['cache_dir'], 'anchor_names.npy'), anchor_names)
+print(f"Read {len(neg_rho_wrt_center)} negative shapes")
+print(f"Read {len(anchor_rho_wrt_center)} positive shapes")
+
+# Save anchor (save as "binder_" for compatibility)
+np.save(os.path.join(params['cache_dir'], 'binder_rho_wrt_center.npy'), anchor_rho_wrt_center)
+np.save(os.path.join(params['cache_dir'], 'binder_theta_wrt_center.npy'), anchor_theta_wrt_center)
+np.save(os.path.join(params['cache_dir'], 'binder_input_feat.npy'), anchor_input_feat)
+np.save(os.path.join(params['cache_dir'], 'binder_mask.npy'), anchor_mask)
+np.save(os.path.join(params['cache_dir'], 'binder_names.npy'), anchor_names)
 
 # Save positive
 np.save(os.path.join(params['cache_dir'], 'pos_rho_wrt_center.npy'), pos_rho_wrt_center)
