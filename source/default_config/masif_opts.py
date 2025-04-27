@@ -32,7 +32,7 @@ masif_opts["ppi_search"]["max_shape_size"] = 200
 masif_opts["ppi_search"]["max_distance"] = 12.0  # Radius for the neural network.
 masif_opts["ppi_search"][
     "masif_precomputation_dir"
-] = "data_preparation/04b-precomputation_12A/precomputation/"
+] ="data_preparation/04a-precomputation_9A/precomputation/" # old: "data_preparation/04b-precomputation_12A/precomputation/" 
 masif_opts["ppi_search"]["feat_mask"] = [1.0] * 5
 masif_opts["ppi_search"]["max_sc_filt"] = 1.0
 masif_opts["ppi_search"]["min_sc_filt"] = 0.5
