@@ -79,16 +79,6 @@ def construct_batch(
     batch_input_feat_pos = pos_input_feat[c_pos_training_idx]
     batch_mask_pos = pos_mask[c_pos_training_idx]
 
-    # Negate the input_features of the binder, except the last column.
-    batch_input_feat_binder = -batch_input_feat_binder
-    # TODO: This should not be like this ... it is a hack.
-    if batch_input_feat_binder.shape[2] == 5 or batch_input_feat_binder.shape[2] == 3:
-        batch_input_feat_binder[:, :, -1] = -batch_input_feat_binder[
-            :, :, -1
-        ]  # Do not negate hydrophobicity.
-    # Also negate the theta coords for the binder.
-    batch_theta_coords_binder = 2 * np.pi - batch_theta_coords_binder
-
     batch_rho_coords_neg = np.expand_dims(neg_rho_wrt_center[c_neg_training_idx], 2)
     batch_theta_coords_neg = np.expand_dims(neg_theta_wrt_center[c_neg_training_idx], 2)
     batch_input_feat_neg = neg_input_feat[c_neg_training_idx]
