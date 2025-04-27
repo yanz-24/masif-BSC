@@ -310,7 +310,9 @@ For speed reasons, the actual data that will be used by the neural network is ca
 
 Once the data has been cached, the training for the network can start:
 
+```
 ./train.sh nn_models.sc05.custom_params
+```
 
 For the paper we trained for about 40 hours. The neural network model is saved  in the nn_models/sc05/all_feat/model_data directory whenever the validation ROC AUC improves over the previously saved model's validation ROC AUC. 
 

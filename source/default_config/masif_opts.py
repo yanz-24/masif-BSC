@@ -25,6 +25,9 @@ masif_opts["radius"] = 12.0
 masif_opts["ppi_search"] = {}
 masif_opts["ppi_search"]["training_list"] = "lists/training.txt"
 masif_opts["ppi_search"]["testing_list"] = "lists/testing.txt"
+masif_opts["ppi_search"]["training_triplets"] = "lists/training_list.txt"
+masif_opts["ppi_search"]["validation_triplets"] = "lists/validation_list.txt"
+masif_opts["ppi_search"]["testing_triplets"] = "lists/testing_list.txt"
 masif_opts["ppi_search"]["max_shape_size"] = 200
 masif_opts["ppi_search"]["max_distance"] = 12.0  # Radius for the neural network.
 masif_opts["ppi_search"][

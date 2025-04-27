@@ -9,6 +9,10 @@ class MaSIF_ppi_search:
     """
 
     def count_number_parameters(self):
+        """
+        Count the number of parameters in the model (to view model scale for 
+        model inspection and understanding model complexity.).
+        """
         total_parameters = 0
         for variable in tf.trainable_variables():
             # shape is an array of tf.Dimension
@@ -22,6 +26,15 @@ class MaSIF_ppi_search:
         print("Total number parameters: %d" % total_parameters)
 
     def frobenius_norm(self, tensor):
+        """
+        Computes the Frobenius norm of a given tensor.
+        
+        Args:
+            tensor (tf.Tensor): Input tensor.
+
+        Returns:
+            tf.Tensor: Scalar representing the Frobenius norm.
+        """
         square_tensor = tf.square(tensor)
         tensor_sum = tf.reduce_sum(square_tensor)
         frobenius_norm = tf.sqrt(tensor_sum)
@@ -35,6 +48,11 @@ class MaSIF_ppi_search:
         return A
 
     def compute_initial_coordinates(self):
+        """
+        Generates initial polar grid coordinates (rho, theta) based on predefined parameters
+        for Gaussian kernel placement across a polar grid in the patch descriptor computation.
+
+        """
         range_rho = [0.0, self.max_rho]
         range_theta = [0, 2 * np.pi]
 
@@ -73,6 +91,27 @@ class MaSIF_ppi_search:
         eps=1e-5,
         mean_gauss_activation=True,
     ):
+        """
+        Computes the descriptor from input features using learned Gaussian kernels and rotational averaging
+        to extracts a robust rotation-invariant patch descriptor from local patch features.
+
+        Args:
+            input_feat (tf.Tensor): Input feature tensor (batch_size, n_vertices, n_feat).
+            rho_coords (tf.Tensor): Rho coordinates (batch_size, n_vertices, 1).
+            theta_coords (tf.Tensor): Theta coordinates (batch_size, n_vertices, 1).
+            mask (tf.Tensor): Binary mask for valid vertices (batch_size, n_vertices, 1).
+            W_conv (tf.Tensor): Weights for the convolution layer.
+            b_conv (tf.Tensor): Bias for the convolution layer.
+            mu_rho (tf.Tensor): Means of the Gaussian functions for rho.
+            sigma_rho (tf.Tensor): Standard deviations for rho Gaussians.
+            mu_theta (tf.Tensor): Means of the Gaussian functions for theta.
+            sigma_theta (tf.Tensor): Standard deviations for theta Gaussians.
+            eps (float): Small constant to prevent division by zero.
+            mean_gauss_activation (bool): Whether to normalize Gaussian activations across the grid.
+
+        Returns:
+            tf.Tensor: Output descriptor for each input patch (batch_size, descriptor_dim).
+        """
         n_samples = tf.shape(rho_coords)[0]
         n_vertices = tf.shape(rho_coords)[1]
         # n_feat = input_feat.get_shape().as_list()[2]
@@ -129,6 +168,16 @@ class MaSIF_ppi_search:
 
     # Softmax cross entropy
     def compute_data_loss_cross_entropy(self, pos, neg):
+        """
+        Computes cross-entropy loss between positive and negative patch pair scores.
+        
+        Args:
+            pos (tf.Tensor): Positive pair score.
+            neg (tf.Tensor): Negative pair score.
+
+        Returns:
+            tf.Tensor: Cross-entropy loss value.
+        """
         epsilon = tf.constant(value=0.00001)
         logit = tf.nn.softmax([pos, neg])
         self.softmax_debug = logit
@@ -138,6 +187,20 @@ class MaSIF_ppi_search:
     # Data loss
     # Values above 10 are ignored.
     def compute_data_loss(self, pos_thresh=0.0, neg_thresh=10):
+        """
+        Computes the data loss for the model based on distances between descriptors of patch pairs.
+
+        Purpose:
+            Main loss function for training the model to distinguish binding vs non-binding patch pairs.
+            Uses standard deviation and mean of positive and negative distances.
+
+        Args:
+            pos_thresh (float): Threshold below which positive distances are considered low-loss.
+            neg_thresh (float): Threshold above which negative distances are ignored.
+
+        Returns:
+            tf.Tensor: Scalar data loss value.
+        """
         self.global_desc_pos = tf.gather(self.global_desc, tf.range(0, self.n_patches))
         self.global_desc_binder = tf.gather(
             self.global_desc, tf.range(self.n_patches, 2 * self.n_patches)
@@ -182,7 +245,18 @@ class MaSIF_ppi_search:
         idx_gpu="/device:GPU:0",
         feat_mask=[1.0, 1.0, 1.0, 1.0, 1.0],
     ):
+        """
+        Initialize the MaSIF-search neural network model.
 
+        This sets up all the components of the network, including Gaussian basis 
+        functions, convolution parameters, global descriptor computation, and loss 
+        function. The initialization also includes session creation, optimizer, 
+        and model saver.
+
+        Args:
+            params (dict): A dictionary of model hyperparameters.
+            training (bool): Whether the model is in training mode.
+        """
         # order of the spectral filters
         self.max_rho = max_rho
         self.n_thetas = n_thetas
@@ -246,7 +320,7 @@ class MaSIF_ppi_search:
                     tf.float32, shape=[None, None, 1]
                 )  # batch_size, n_vertices, 1
 
-                self.global_desc = []
+                self.global_desc = [] # 80D fingerprint
 
                 # Initialize b_conv for each feature.
                 b_conv = []
