@@ -1,4 +1,4 @@
-masif_root=$(git rev-parse --show-toplevel)
+masif_root=/home/yanyuan.zhang/project/masif-toughm1/masif-BSC
 masif_source=$masif_root/source
 masif_data=$masif_root/data
 masif_matlab=$masif_root/source/matlab_libs
