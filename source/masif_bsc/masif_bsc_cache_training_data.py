@@ -114,7 +114,7 @@ def load_one_set_of_triplets(triplets, source):
             idx_count += 1
         except Exception as e:
             print(f"Error processing triplet {anchor_name} {positive_name} {negative_name}: {str(e)}")
-            set_trace()
+            # set_trace()
 
 load_one_set_of_triplets(training_triplets, 'train')
 load_one_set_of_triplets(validation_triplets, 'val')
