@@ -5,7 +5,7 @@ import numpy as np
 class MaSIF_bsc:
 
     """
-    The neural network model to classify two patches into binders or not binders. 
+    The neural network model to classify two pockets into similar or dissimilar. 
     """
 
     def count_number_parameters(self):
