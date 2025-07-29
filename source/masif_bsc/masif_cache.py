@@ -13,7 +13,9 @@ if not os.path.exists('/Users/yanyz/Ratar/masif-BSC/data/masif_bsc'):
     sys.exit(1)
 os.chdir('/Users/yanyz/Ratar/masif-BSC/data/masif_bsc')
 
-def cache_data(triplet_file):
+def cache_data(
+        triplets,
+        patches_per_protein=32,):
     """
     This script caches data for the MaSIF binding site classification task.
     It reads triplets of binder, positive, and negative samples, processes them,
@@ -23,7 +25,7 @@ def cache_data(triplet_file):
     params = masif_opts['ppi_search']
 
     # Read input file containing triplets: binder, positive, negative
-    triplets = [line.strip().split() for line in open(triplet_file)]
+    # triplets = [line.strip().split() for line in open(triplet_file)]
 
     # Output directory
     if not os.path.exists(params['cache_dir']):
@@ -55,7 +57,7 @@ def cache_data(triplet_file):
     np.random.seed(0)
 
     for binder_id, pos_id, neg_id in triplets:
-        print(f"Processing: Binder: {binder_id}, Positive: {pos_id}, Negative: {neg_id}")
+        # print(f"Caching: Binder: {binder_id}, Positive: {pos_id}, Negative: {neg_id}")
         
         for pid, rho_list, theta_list, feat_list, mask_list, name_list in [
             (binder_id, binder_rho_wrt_center, binder_theta_wrt_center, binder_input_feat, binder_mask, pos_names),
@@ -64,10 +66,23 @@ def cache_data(triplet_file):
         ]:
             basename = f"{pid[:4]}_{pid[-1]}" 
             folder = os.path.join(params['masif_precomputation_dir'], basename)
+            # Load the numpy arrays
             rho = np.load(os.path.join(folder, f"p1_rho_wrt_center.npy"))
             theta = np.load(os.path.join(folder, f"p1_theta_wrt_center.npy"))
             feat = np.load(os.path.join(folder, f"p1_input_feat.npy"))
             mask = np.load(os.path.join(folder, f"p1_mask.npy"))
+
+            # randomly select 32 patches from the loaded data
+            if rho.shape[0] > patches_per_protein:
+                indices = np.random.choice(rho.shape[0], patches_per_protein, replace=False)
+                rho = rho[indices]
+                theta = theta[indices]
+                feat = feat[indices]
+                mask = mask[indices]
+            elif rho.shape[0] < patches_per_protein:
+                print(f"Warning: {pid} has less than {patches_per_protein} patches. Using all available patches.")
+                # No need to modify rho, theta, feat, mask as they are already smaller than 32
+            # elif: No need to modify when rho.shape[0] == patches_per_protein
 
             rho_list.append(rho)
             theta_list.append(theta)
@@ -87,7 +102,58 @@ def cache_data(triplet_file):
         else:
             test_idx.extend(range(idx_count, idx_count + rho.shape[0]))
         idx_count += rho.shape[0]
+    
+    output = {
+        'binder_rho_wrt_center': binder_rho_wrt_center,
+        'binder_theta_wrt_center': binder_theta_wrt_center,
+        'binder_input_feat': binder_input_feat,
+        'binder_mask': binder_mask,
+        'pos_rho_wrt_center': pos_rho_wrt_center,
+        'pos_theta_wrt_center': pos_theta_wrt_center,
+        'pos_input_feat': pos_input_feat,
+        'pos_mask': pos_mask,
+        'neg_rho_wrt_center': neg_rho_wrt_center,
+        'neg_theta_wrt_center': neg_theta_wrt_center,
+        'neg_input_feat': neg_input_feat, 
+        'neg_mask': neg_mask,
+        'pos_names': pos_names,
+        'neg_names': neg_names,
+        'pos_training_idx': training_idx,
+        'pos_val_idx': val_idx,
+        'pos_test_idx': test_idx,
+        'neg_training_idx': training_idx,  # Reuse the same indices for negatives
+        'neg_val_idx': val_idx,
+        'neg_test_idx': test_idx,  # Reuse the same indices for negatives 
+    }
 
+    return output
+
+    """
+    output = {
+        'binder_rho_wrt_center': np.concatenate(binder_rho_wrt_center),
+        'binder_theta_wrt_center': np.concatenate(binder_theta_wrt_center),
+        'binder_input_feat': np.concatenate(binder_input_feat),
+        'binder_mask': np.concatenate(binder_mask),
+        'pos_rho_wrt_center': np.concatenate(pos_rho_wrt_center),
+        'pos_theta_wrt_center': np.concatenate(pos_theta_wrt_center),
+        'pos_input_feat': np.concatenate(pos_input_feat),
+        'pos_mask': np.concatenate(pos_mask),
+        'neg_rho_wrt_center': np.concatenate(neg_rho_wrt_center),
+        'neg_theta_wrt_center': np.concatenate(neg_theta_wrt_center),
+        'neg_input_feat': np.concatenate(neg_input_feat),
+        'neg_mask': np.concatenate(neg_mask),
+        'pos_names': np.array(pos_names),
+        'neg_names': np.array(neg_names),
+        'pos_training_idx': np.array(training_idx),
+        'pos_val_idx': np.array(val_idx),
+        'pos_test_idx': np.array(test_idx),
+        'neg_training_idx': np.array(training_idx),
+        'neg_val_idx': np.array(val_idx),
+        'neg_test_idx': np.array(test_idx), 
+    }
+
+    return output
+    
     # Concatenate and save
     def save(name, array):
         np.save(os.path.join(params['cache_dir'], name + ".npy"), array)
@@ -119,3 +185,4 @@ def cache_data(triplet_file):
     save('neg_test_idx', np.array(test_idx))
 
     print(f"Finished saving cached data to {params['cache_dir']}")
+    """
