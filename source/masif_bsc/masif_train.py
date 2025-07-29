@@ -1,45 +1,15 @@
 import os
 import tensorflow as tf
 import numpy as np
-from masif_bsc import MaSIF_bsc  # Assuming your class is in this file
-from masif_cache import cache_data  # Import your caching function
-from default_config.masif_opts import masif_opts
+import logging
+from masif_bsc import MaSIF_bsc 
+from masif_cache import cache_data 
+from default_config.masif_opts import MODEL_PARAMS, TRAINING_PARAMS, DATA_PARAMS
+from default_config.logger_config import setup_logger  
 from sklearn.metrics import roc_auc_score
 
-# Model parameters
-MODEL_PARAMS = {
-    'max_rho': 12.0,            # Maximum radial distance
-    'n_thetas': 16,             # Number of angular bins
-    'n_rhos': 5,                # Number of radial bins
-    'n_gamma': 1.0,             # Gamma parameter
-    'n_rotations': 16,          # Number of rotations for data augmentation
-    'idx_gpu': "/device:GPU:0", # GPU device (use "/device:CPU:0" for CPU)
-    'feat_mask': [1.0, 1.0, 1.0, 1.0, 1.0]  # Feature mask (which features to use)
-}
 
-# Training parameters
-TRAINING_PARAMS = {
-    'learning_rate': 1e-3,
-    'keep_prob': 0.8,                   # Dropout keep probability
-    'n_epochs': 3,                      # Number of epochs to train
-    'batch_size': 1,                    # Number of quadruplets [binder, pos, neg, neg2] in one batch. 
-    'num_iterations' : 1000,            # Total number of training iterations
-    'print_every': 10,                  # Print loss every N iterations
-    'val_every': 10,                    # Number of iterations to validate the model, i.e. evaluate the model on the test set every N iterations
-    'cache_every' : 10,                 # Cache the data every N iterations
-    'early_stopping': True,             # Whether to use early stopping
-    'early_stopping_patience': None,      # Number of iterations to wait for improvement before stopping training
-    'early_stopping_delta': 0.01,       # Minimum change to qualify as an improvement
-    'early_stopping_metric': 'loss',    # Metric to monitor for early stopping, 'roc_auc' or 'loss'
-}
-
-# Data parameters
-DATA_PARAMS = {
-    'data_path': '/Users/yanyz/Ratar/masif-BSC/data/masif_bsc/nn_models/sc05/cache',  # TODO
-    'patches_per_protein': 32,  # Number of patches per protein
-    'triplets': '/Users/yanyz/Ratar/masif-BSC/source/masif_bsc/training_list100.txt',
-    'models': '/Users/yanyz/Ratar/masif-BSC/data/masif_bsc/models' 
-}
+logger = setup_logger(__name__)
 
 class MaSIFTrainer:
     def __init__(self, model_params, training_params):
@@ -152,7 +122,7 @@ class MaSIFTrainer:
         Returns:
             tuple: (average_loss, roc_auc_score)
         """
-        print(f"Evaluating on {data_type} set...")
+        logger.info(f"Evaluating on {data_type} set...")
         
         losses = []
         scores_all = []
@@ -202,12 +172,12 @@ class MaSIFTrainer:
     def save_model(self, save_path):
         """Save the trained model"""
         self.model.saver.save(self.model.session, save_path)
-        print(f"Model saved to {save_path}")
+        logger.info(f"Model saved to {save_path}")
     
     def load_model(self, load_path):
         """Load a pre-trained model"""
         self.model.saver.restore(self.model.session, load_path)
-        print(f"Model loaded from {load_path}")
+        logger.info(f"Model loaded from {load_path}")
 
 
     def validate(self, validation_cached, iteration):
@@ -223,15 +193,12 @@ class MaSIFTrainer:
         Returns:
             float: Updated best AUC score
         """
-        print(f"\n--- Validation at iteration {iteration} ---")
+        logger.info(f"\n--- Validation at iteration {iteration} ---")
         
         val_loss, val_auc = self.evaluate_model_on_data(validation_cached, "validation")
         
-        print(f"Validation Loss: {val_loss:.6f}")
-        print(f"Validation ROC AUC: {val_auc:.6f}")
-        
-        print("--- End Validation ---\n")
-        
+        logger.info(f"Validation Loss: {val_loss:.6f}, Validation ROC AUC: {val_auc:.6f}")
+                
         return val_auc
 
 def construct_batch(
@@ -372,23 +339,22 @@ def test_final_model(trainer, triplets_testing, data_params, best_model_path, be
         tuple: (test_loss, test_auc)
     """
     # Load best model for final testing
-    print(f"\nLoading best model (ROC AUC: {best_auc:.6f}) for final testing...")
+    logger.info(f"\nLoading best model (ROC AUC: {best_auc:.6f}) for final testing...")
     trainer.load_model(best_model_path)
     
     # Cache test data
-    print("Caching test data...")
+    logger.info("Caching test data...")
     test_cached = cache_data(
         triplets_testing, 
         data_params['patches_per_protein'],
     )
-    print("Test data cached.")
     
-    print("\n--- Final Testing ---")
+    logger.info("\n--- Final Testing ---")
     test_loss, test_auc = trainer.evaluate_model_on_data(test_cached, "test")
     
-    print(f"Final Test Loss: {test_loss:.6f}")
-    print(f"Final Test ROC AUC: {test_auc:.6f}")
-    print(f"Best Validation ROC AUC: {best_auc:.6f}")
+    logger.info(f"Final Test Loss: {test_loss:.6f}")
+    logger.info(f"Final Test ROC AUC: {test_auc:.6f}")
+    logger.info(f"Best Validation ROC AUC: {best_auc:.6f}")
     
     return test_loss, test_auc
 
@@ -402,7 +368,7 @@ def train_masif_bsc(
     trainer = MaSIFTrainer(model_params, training_params)
 
     # load data
-    print("Loading data...")
+    logger.info("Loading data...")
     triplets = [line.strip().split() for line in open(DATA_PARAMS['triplets'])]
     triplets_trainig = triplets[:int(len(triplets) * 0.8)]  # 80% for training
     triplets_validation = triplets[int(len(triplets) * 0.8):int(len(triplets) * 0.9)]  # 10% for validation
@@ -416,30 +382,28 @@ def train_masif_bsc(
     os.makedirs("models", exist_ok=True)
     
     # Cache validation data once
-    print("Caching validation data...")
+    logger.info("Caching validation data...")
     validation_cached = cache_data(
         triplets_validation,
         data_params['patches_per_protein'],
     )
-    print("Validation data cached.")
+    logger.info("Validation data cached.")
 
     iteration = 0
     # Training loop
-    print("Starting training...")
+    logger.info("Starting training...")
     for epoch in range(training_params['n_epochs']):
         np.random.shuffle(triplets_trainig)
         while iteration <= training_params['num_iterations']:
             
-
             # cache training data every 'cache_every' iterations
             if iteration % training_params['cache_every'] == 0:
-                print(f"Iteration {iteration}, caching data...")
+                logger.info(f"Iteration {iteration}, caching data...")
                 triplets_cache = triplets_trainig[iteration:iteration + training_params['cache_every']]
                 cached_data = cache_data(
                     triplets_cache,
                     data_params['patches_per_protein'],
                 )
-                print(f"Epoch {epoch} Iteration {iteration}: Caching done.")
 
             # traning on cached data
             batch_count = len(cached_data['binder_rho_wrt_center'])
@@ -472,7 +436,6 @@ def train_masif_bsc(
 
                 # Training step
                 loss, grad_norm = trainer.train_step(batch_data)
-                print("Done")
 
                 if iteration == 0: # Initialize best loss at the first iteration    
                     best_loss = loss 
@@ -480,13 +443,13 @@ def train_masif_bsc(
                 iteration += 1
 
             if iteration % training_params['print_every'] == 0:
-                print(f"Iteration {iteration + i}, Loss: {loss:.4f}, Grad Norm: {grad_norm:.4f}")
+                logger.info(f"Iteration {iteration + i}, Loss: {loss:.4f}, Grad Norm: {grad_norm:.4f}")
 
             # Validation every N step
             val_counter = 0
             if iteration % training_params['val_every'] == 0:
                 val_auc = trainer.validate(validation_cached, iteration)
-                print(f"Best ROC AUC so far: {best_auc:.6f}")
+                logger.info(f"Best ROC AUC so far: {best_auc:.6f}")
                 
                 if val_counter == 0:
                     best_auc = val_auc
@@ -496,28 +459,28 @@ def train_masif_bsc(
                 if val_auc > best_auc:
                     best_auc = val_auc
                     trainer.save_model(f'{data_params["models"]}/best_masif_model.ckpt')
-                    print(f"New best model saved! ROC AUC: {best_auc:.6f}")
+                    logger.info(f"New best model saved! ROC AUC: {best_auc:.6f}")
             
                 # Early stopping check
                 if training_params.get('early_stopping', True):
                     if training_params['early_stopping_patience']:
                         if iteration >= training_params['early_stopping_patience']:
-                            print("Early Stopping: Patience exceeded.")
+                            logger.info("Early Stopping: Patience exceeded.")
                             break
                     if training_params['early_stopping_metric'] == 'loss':
                         if (best_loss - loss) < training_params['early_stopping_delta']:
-                            print(f"Early Stopping: Best loss achieved. Best loss: {best_loss:.6f}")
+                            logger.info(f"Early Stopping: Best loss achieved. Best loss: {best_loss:.6f}")
                             break
                     elif training_params['early_stopping_metric'] == 'roc_auc':
                         if (val_auc - best_auc) < training_params['early_stopping_delta']:
-                            print("Early Stopping: ROC AUC did not improve.")
+                            logger.info("Early Stopping: ROC AUC did not improve.")
                             break
                
              # Save model periodically (in addition to best model)
             if iteration % training_params.get('save_every', 1000) == 0 and iteration > 0:
                 periodic_save_path = f"models/masif_model_iter_{iteration}.ckpt"
                 trainer.save_model(periodic_save_path)
-                print(f"Periodic model saved at iteration {iteration}")
+                logger.info(f"Periodic model saved at iteration {iteration}")
 
             if loss < best_loss: # Update best loss if current loss is lower
                 best_loss = loss
