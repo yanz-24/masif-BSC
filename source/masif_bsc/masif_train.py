@@ -1,8 +1,10 @@
+import os
 import tensorflow as tf
 import numpy as np
 from masif_bsc import MaSIF_bsc  # Assuming your class is in this file
 from masif_cache import cache_data  # Import your caching function
 from default_config.masif_opts import masif_opts
+from sklearn.metrics import roc_auc_score
 
 # Model parameters
 MODEL_PARAMS = {
@@ -18,20 +20,25 @@ MODEL_PARAMS = {
 # Training parameters
 TRAINING_PARAMS = {
     'learning_rate': 1e-3,
-    'keep_prob': 0.8,           # Dropout keep probability
-    'n_epochs': 3,              # Number of epochs to train
-    'batch_size': 1,            # Number of quadruplets [binder, pos, neg, neg2] in one batch. 
-    'print_every': 10,          # Print loss every N iterations
-    'num_iterations' : 1000,    # Total number of training iterations
-    'test_every': 10,           # Number of iterations to test the model, i.e. evaluate the model on the test set every N iterations
-    'cache_every' : 10,         # Cache the data every N iterations
+    'keep_prob': 0.8,                   # Dropout keep probability
+    'n_epochs': 3,                      # Number of epochs to train
+    'batch_size': 1,                    # Number of quadruplets [binder, pos, neg, neg2] in one batch. 
+    'num_iterations' : 1000,            # Total number of training iterations
+    'print_every': 10,                  # Print loss every N iterations
+    'val_every': 10,                    # Number of iterations to validate the model, i.e. evaluate the model on the test set every N iterations
+    'cache_every' : 10,                 # Cache the data every N iterations
+    'early_stopping': True,             # Whether to use early stopping
+    'early_stopping_patience': None,      # Number of iterations to wait for improvement before stopping training
+    'early_stopping_delta': 0.01,       # Minimum change to qualify as an improvement
+    'early_stopping_metric': 'loss',    # Metric to monitor for early stopping, 'roc_auc' or 'loss'
 }
 
 # Data parameters
 DATA_PARAMS = {
     'data_path': '/Users/yanyz/Ratar/masif-BSC/data/masif_bsc/nn_models/sc05/cache',  # TODO
     'patches_per_protein': 32,  # Number of patches per protein
-    'triplets': '/Users/yanyz/Ratar/masif-BSC/source/masif_bsc/training_list100.txt',  # TODO 
+    'triplets': '/Users/yanyz/Ratar/masif-BSC/source/masif_bsc/training_list100.txt',
+    'models': '/Users/yanyz/Ratar/masif-BSC/data/masif_bsc/models' 
 }
 
 class MaSIFTrainer:
@@ -134,6 +141,64 @@ class MaSIFTrainer:
         
         return loss, scores
     
+    def evaluate_model_on_data(self, cached_data, data_type="validation"):    
+        """
+        Evaluate the model on a given dataset and return loss and ROC AUC.
+        
+        Args:
+            cached_data: Pre-cached data dictionary
+            data_type: String identifier for logging purposes
+        
+        Returns:
+            tuple: (average_loss, roc_auc_score)
+        """
+        print(f"Evaluating on {data_type} set...")
+        
+        losses = []
+        scores_all = []
+        labels_all = []
+        
+        for idx in range(len(cached_data['binder_rho_wrt_center'])):
+            batch_data = construct_batch(
+                binder_rho_wrt_center=cached_data['binder_rho_wrt_center'][idx],
+                binder_theta_wrt_center=cached_data['binder_theta_wrt_center'][idx],
+                binder_input_feat=cached_data['binder_input_feat'][idx],
+                binder_mask=cached_data['binder_mask'][idx],
+                pos_rho_wrt_center=cached_data['pos_rho_wrt_center'][idx],
+                pos_theta_wrt_center=cached_data['pos_theta_wrt_center'][idx],
+                pos_input_feat=cached_data['pos_input_feat'][idx],
+                pos_mask=cached_data['pos_mask'][idx],
+                neg_rho_wrt_center=cached_data['neg_rho_wrt_center'][idx],
+                neg_theta_wrt_center=cached_data['neg_theta_wrt_center'][idx],
+                neg_input_feat=cached_data['neg_input_feat'][idx],
+                neg_mask=cached_data['neg_mask'][idx],
+            )
+
+            batch_dict = {
+                'rho_coords': batch_data[0],
+                'theta_coords': batch_data[1],
+                'input_feat': batch_data[2],
+                'mask': batch_data[3]
+            }
+
+            loss, scores = self.evaluate(batch_dict)
+            losses.append(loss)
+            scores_all.extend(scores)
+            
+            # Create labels: first half are positive pairs (label=1), second half are negative pairs (label=0)
+            batch_size = len(scores)
+            labels = [1] * (batch_size // 2) + [0] * (batch_size // 2)
+            labels_all.extend(labels)
+        
+        # Calculate metrics
+        avg_loss = np.mean(losses)
+        
+        # Convert distances to similarity scores (lower distance = higher similarity)
+        similarities = [-score for score in scores_all]  # Negate distances
+        auc_score = roc_auc_score(labels_all, similarities)
+        
+        return avg_loss, auc_score
+    
     def save_model(self, save_path):
         """Save the trained model"""
         self.model.saver.save(self.model.session, save_path)
@@ -143,6 +208,31 @@ class MaSIFTrainer:
         """Load a pre-trained model"""
         self.model.saver.restore(self.model.session, load_path)
         print(f"Model loaded from {load_path}")
+
+
+    def validate(self, validation_cached, iteration):
+        """
+        Perform validation and save best model if improved.
+        
+        Args:
+            validation_cached: Pre-cached validation data
+            iteration: Current training iteration
+            best_auc: Current best AUC score
+            best_model_path: Path to save the best model
+        
+        Returns:
+            float: Updated best AUC score
+        """
+        print(f"\n--- Validation at iteration {iteration} ---")
+        
+        val_loss, val_auc = self.evaluate_model_on_data(validation_cached, "validation")
+        
+        print(f"Validation Loss: {val_loss:.6f}")
+        print(f"Validation ROC AUC: {val_auc:.6f}")
+        
+        print("--- End Validation ---\n")
+        
+        return val_auc
 
 def construct_batch(
     binder_rho_wrt_center,
@@ -267,6 +357,42 @@ def create_dummy_data(n_samples, n_vertices, n_feat):
     }
     return batch_data
 
+def test_final_model(trainer, triplets_testing, data_params, best_model_path, best_auc):
+    """
+    Test the final model on the test set.
+    
+    Args:
+        trainer: MaSIFTrainer instance
+        triplets_testing: Test set triplets
+        data_params: Data parameters dictionary
+        best_model_path: Path to the best saved model
+        best_auc: Best validation AUC achieved
+    
+    Returns:
+        tuple: (test_loss, test_auc)
+    """
+    # Load best model for final testing
+    print(f"\nLoading best model (ROC AUC: {best_auc:.6f}) for final testing...")
+    trainer.load_model(best_model_path)
+    
+    # Cache test data
+    print("Caching test data...")
+    test_cached = cache_data(
+        triplets_testing, 
+        data_params['patches_per_protein'],
+    )
+    print("Test data cached.")
+    
+    print("\n--- Final Testing ---")
+    test_loss, test_auc = trainer.evaluate_model_on_data(test_cached, "test")
+    
+    print(f"Final Test Loss: {test_loss:.6f}")
+    print(f"Final Test ROC AUC: {test_auc:.6f}")
+    print(f"Best Validation ROC AUC: {best_auc:.6f}")
+    
+    return test_loss, test_auc
+
+
 def train_masif_bsc(
         model_params=MODEL_PARAMS,
         training_params=TRAINING_PARAMS, 
@@ -282,13 +408,30 @@ def train_masif_bsc(
     triplets_validation = triplets[int(len(triplets) * 0.8):int(len(triplets) * 0.9)]  # 10% for validation
     triplets_testing = triplets[int(len(triplets) * 0.9):]  # 10% for testing
     
+    # Best model tracking
+    best_auc = 0.0
+    best_model_path = "models/best_masif_model.ckpt"
+    
+    # Create models directory if it doesn't exist
+    os.makedirs("models", exist_ok=True)
+    
+    # Cache validation data once
+    print("Caching validation data...")
+    validation_cached = cache_data(
+        triplets_validation,
+        data_params['patches_per_protein'],
+    )
+    print("Validation data cached.")
+
     iteration = 0
     # Training loop
     print("Starting training...")
     for epoch in range(training_params['n_epochs']):
         np.random.shuffle(triplets_trainig)
         while iteration <= training_params['num_iterations']:
-            # cache data every 'cache_every' iterations
+            
+
+            # cache training data every 'cache_every' iterations
             if iteration % training_params['cache_every'] == 0:
                 print(f"Iteration {iteration}, caching data...")
                 triplets_cache = triplets_trainig[iteration:iteration + training_params['cache_every']]
@@ -298,7 +441,9 @@ def train_masif_bsc(
                 )
                 print(f"Epoch {epoch} Iteration {iteration}: Caching done.")
 
-            for i in range(min(training_params['cache_every'], len(cached_data['binder_rho_wrt_center']))):
+            # traning on cached data
+            batch_count = len(cached_data['binder_rho_wrt_center'])
+            for i in range(batch_count):
                 # Construct batch data from cached data
                 # Load batch data. A batch data is a group of 4 protein [binder, pos, neg1, neg2].
                 # each protein has 32 patches, and the total batch size is 32*4 = 128.
@@ -329,30 +474,65 @@ def train_masif_bsc(
                 loss, grad_norm = trainer.train_step(batch_data)
                 print("Done")
 
-            print(f"Iteration {iteration + i}, Loss: {loss:.4f}, Grad Norm: {grad_norm:.4f}")
-            iteration += training_params['cache_every']
+                if iteration == 0: # Initialize best loss at the first iteration    
+                    best_loss = loss 
 
-            if iteration % training_params['test_every'] == 0:
+                iteration += 1
+
+            if iteration % training_params['print_every'] == 0:
+                print(f"Iteration {iteration + i}, Loss: {loss:.4f}, Grad Norm: {grad_norm:.4f}")
+
+            # Validation every N step
+            val_counter = 0
+            if iteration % training_params['val_every'] == 0:
+                val_auc = trainer.validate(validation_cached, iteration)
+                print(f"Best ROC AUC so far: {best_auc:.6f}")
                 
+                if val_counter == 0:
+                    best_auc = val_auc
+                val_counter += 1
+
+                # Save best model based on ROC AUC
+                if val_auc > best_auc:
+                    best_auc = val_auc
+                    trainer.save_model(f'{data_params["models"]}/best_masif_model.ckpt')
+                    print(f"New best model saved! ROC AUC: {best_auc:.6f}")
             
-            # Save model periodically
-            if epoch % training_params['test_every_iter'] == 0 and epoch > 0:
-                save_path = f"models/masif_model_epoch_{epoch}.ckpt"
-                trainer.save_model(save_path)
+                # Early stopping check
+                if training_params.get('early_stopping', True):
+                    if training_params['early_stopping_patience']:
+                        if iteration >= training_params['early_stopping_patience']:
+                            print("Early Stopping: Patience exceeded.")
+                            break
+                    if training_params['early_stopping_metric'] == 'loss':
+                        if (best_loss - loss) < training_params['early_stopping_delta']:
+                            print(f"Early Stopping: Best loss achieved. Best loss: {best_loss:.6f}")
+                            break
+                    elif training_params['early_stopping_metric'] == 'roc_auc':
+                        if (val_auc - best_auc) < training_params['early_stopping_delta']:
+                            print("Early Stopping: ROC AUC did not improve.")
+                            break
+               
+             # Save model periodically (in addition to best model)
+            if iteration % training_params.get('save_every', 1000) == 0 and iteration > 0:
+                periodic_save_path = f"models/masif_model_iter_{iteration}.ckpt"
+                trainer.save_model(periodic_save_path)
+                print(f"Periodic model saved at iteration {iteration}")
+
+            if loss < best_loss: # Update best loss if current loss is lower
+                best_loss = loss
         
-    # Final model save
+    # Final testing
+    test_loss, test_auc = test_final_model(trainer, triplets_testing, data_params, best_model_path, best_auc)
+    
+    # Save final model
     final_save_path = "models/masif_model_final.ckpt"
     trainer.save_model(final_save_path)
     
-    # Example evaluation
-    test_data_cached = cache_data(
-                    triplets_testing, 
-                    data_params['patches_per_protein'],
-                )
-    
-    print("\nEvaluating model...")
-    test_data = construct_batch(test_data_cached)  # Load test data
-    test_loss, test_scores = trainer.evaluate(test_data)
-    print(f"Test Loss: {test_loss:.6f}")
-    print(f"Test Scores shape: {test_scores.shape}")
+    return {
+        'best_val_auc': best_auc,
+        'final_test_auc': test_auc,
+        'final_test_loss': test_loss,
+        'best_model_path': best_model_path
+    }
 
